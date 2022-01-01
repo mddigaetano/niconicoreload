@@ -1,0 +1,7 @@
+*
+!.gitignore
+!*.p
+!requirements.txt
+!README.md
+!Dockerfile
+!.dockerignore

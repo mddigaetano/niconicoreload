@@ -113,12 +113,17 @@ class NicoNicoLoad:
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
+        twitter_user_id = os.environ['TWITTER_USER_ID']
+        songs_count = int(os.environ['SONGS_COUNT'])
+        twitter_bearer_token = os.environ['TWITTER_BEARER_TOKEN']
+    else:
+        twitter_user_id = sys.argv[1]
+        songs_count = int(sys.argv[2])
+        twitter_bearer_token = sys.argv[3]
+
+    if twitter_user_id == "" or songs_count == "" or twitter_bearer_token == "":
         print("Syntax error: python niconicoreload.py <twitter_user_id> <songs_count> <twitter_bearer_token>")
         exit()
-
-    twitter_user_id = sys.argv[1]
-    songs_count = int(sys.argv[2])
-    twitter_bearer_token = sys.argv[3]
 
     nnl = NicoNicoLoad(twitter_user_id, songs_count, twitter_bearer_token)
     nnl.start()
