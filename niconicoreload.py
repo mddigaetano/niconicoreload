@@ -2,11 +2,9 @@
 
 import os
 import sys
-import subprocess
 
-from twitter import Twitter, OAuth
-
-import youtube_dl
+import tweepy
+from yt_dlp import YoutubeDL
 
 from mutagen.mp3 import MP3
 from mutagen.id3 import TIT2, TPE1, TALB
@@ -14,7 +12,7 @@ from mutagen.id3 import TIT2, TPE1, TALB
 
 class MyLogger(object):
     def debug(self, msg):
-        print("DBG: " + msg)
+        pass
 
     def warning(self, msg):
         print("WARN: " + msg)
@@ -33,7 +31,7 @@ ydl_opts = {
     'postprocessors': [{
         'key': 'FFmpegExtractAudio',
         'preferredcodec': 'mp3',
-        'preferredquality': '192',
+        #'preferredquality': '192',
     }],
     'logger': MyLogger(),
     'progress_hooks': [my_hook],
@@ -43,7 +41,7 @@ ydl_opts = {
 class NicoNicoLoad:
 
     CHUNK_SIZE = 1024
-    NICONICO_BASE_VIDEO_URL = "http://www.nicovideo.jp/watch/"
+    NICONICO_BASE_VIDEO_URL = "https://www.nicovideo.jp/watch/"
 
     corrections = {
         u"1-6 -out of the gravity-": u"1/6 -out of the gravity-",
@@ -55,17 +53,10 @@ class NicoNicoLoad:
         u"The Flower of Raison d\'Etre": u"The Flower of Raison d\'Être"
     }
 
-    def __init__(self, username, songs_count, oat, oats, ak, asecret):
-        self.username = username
+    def __init__(self, twitter_user_id, songs_count, twitter_bearer_token):
+        self.username = twitter_user_id
         self.songs_count = songs_count
-
-        self.api = Twitter(auth=OAuth(oat, oats, ak, asecret))
-
-    def videoConverter(self, filename):
-        subprocess.run("ffmpeg -i ./Video/\"" + filename + ".mp4\" "
-                       "-vn ./Music/\"" + filename + ".mp3\" "
-                       ">/dev/null 2>&1",
-                       shell=True)
+        self.api = tweepy.Client(bearer_token=twitter_bearer_token)
 
     def tagEditor(self, filename):
         mp3 = MP3("./Music/" + filename + ".mp3")
@@ -89,39 +80,45 @@ class NicoNicoLoad:
         mp3.save(v1=2)
 
     def tweetParser(self, tweet):
-        split = tweet['text'].split(" https")
-        if len(split) == 1:
-            split = tweet['text'].split(" #sm")
-        filename = split[0].replace("&amp;", "&")
-        song_id = tweet['entities']['hashtags'][0]['text']
+        splitted = tweet.split(" #sm")
+        filename = splitted[0].split(" https")[0]
+        filename = filename.replace("&amp;", "&")
+        song_id = ""
+        try:
+            song_id = "sm" + splitted[1].split(' ')[0]
+        except:
+            print(tweet)
         return filename, song_id
 
     def start(self):
-        tweets = self.api.statuses.user_timeline(screen_name=self.username,
-                                                 count=self.songs_count)
+        tweets = tweepy.Paginator(
+            self.api.get_users_tweets, self.username, max_results=10).flatten(limit=self.songs_count)
+
         to_download = []
         for tweet in tweets:
-            filename, song_id = self.tweetParser(tweet)
-            to_download.append(self.NICONICO_BASE_VIDEO_URL + song_id)
+            filename, song_id = self.tweetParser(tweet.text)
+            if song_id != '':
+                to_download.append({"name": filename, "url": self.NICONICO_BASE_VIDEO_URL + song_id})
 
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            ydl.download(to_download)
+        for song in to_download:
+            if not os.path.isfile("./Music/"+song['name'] + ".mp3"):
+                ydl_opts['outtmpl'] = "./Music/" + song['name'] + ".%(ext)s"
+                with YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([song['url']])
+            else:
+                print(song['name'] + " already downloaded")
+        for song in to_download:
+            self.tagEditor(song['name'])
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Syntax error: niconicoreload <twitter_username> <song_count> <twitter_tokens_file>")
+        print("Syntax error: python niconicoreload.py <twitter_user_id> <songs_count> <twitter_bearer_token>")
         exit()
 
-    twitter_username = sys.argv[1]
-    song_count = sys.argv[2]
-    twitter_tokens_file = sys.argv[3]
+    twitter_user_id = sys.argv[1]
+    songs_count = int(sys.argv[2])
+    twitter_bearer_token = sys.argv[3]
 
-    with open(twitter_tokens_file, 'r') as file:
-        oat = file.readline()
-        oats = file.readline()
-        ak = file.readline()
-        asecret = file.readline()
-
-    nnl = NicoNicoLoad(twitter_username, song_count, oat, oats, ak, asecret)
+    nnl = NicoNicoLoad(twitter_user_id, songs_count, twitter_bearer_token)
     nnl.start()
