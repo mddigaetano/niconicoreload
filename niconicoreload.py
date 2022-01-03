@@ -31,7 +31,7 @@ ydl_opts = {
     'postprocessors': [{
         'key': 'FFmpegExtractAudio',
         'preferredcodec': 'mp3',
-        #'preferredquality': '192',
+        'preferredquality': '192',
     }],
     'logger': MyLogger(),
     'progress_hooks': [my_hook],
@@ -104,7 +104,11 @@ class NicoNicoLoad:
             if not os.path.isfile("./Music/"+song['name'] + ".mp3"):
                 ydl_opts['outtmpl'] = "./Music/" + song['name'] + ".%(ext)s"
                 with YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([song['url']])
+                    try:
+                        ydl.download([song['url']])
+                        print(song['name'] + " successfully downloaded")
+                    except Exception:
+                        pass
             else:
                 print(song['name'] + " already downloaded")
         for song in to_download:
