@@ -7,6 +7,7 @@ import re
 import tweepy
 from yt_dlp import YoutubeDL
 
+from mutagen import MutagenError
 from mutagen.mp3 import MP3
 from mutagen.id3 import TIT2, TPE1, TALB
 
@@ -38,6 +39,11 @@ ydl_opts = {
     'progress_hooks': [my_hook],
 }
 
+TGREEN =  '\033[32m' # Green Text
+TYELLOW = '\033[33m' # Yellow text
+TRED = '\033[31m' # Red Text
+ENDC = '\033[m' # reset to the defaults
+
 class NicoNicoLoad:
     NICONICO_BASE_VIDEO_URL = "https://www.nicovideo.jp/watch/"
 
@@ -61,7 +67,7 @@ class NicoNicoLoad:
         self.api = tweepy.Client(bearer_token=twitter_bearer_token)
 
     def tagEditor(self, filename):
-        mp3 = MP3("./Music/" + filename.group(0) + ".mp3")
+        mp3 = MP3("./Music/" + filename.group(1) + ".mp3")
         if mp3.tags == None:
             mp3.add_tags()
         artists = filename.group(2)
@@ -82,7 +88,8 @@ class NicoNicoLoad:
         mp3.save(v1=2)
 
     def tweetParser(self, tweet):
-        temp = self.re_http.match(tweet)
+        tweet = tweet.replace("&amp;", "&")
+        temp = self.re_http.search(tweet)
         url = None
         if temp:
             url = temp.group(0)
@@ -101,7 +108,7 @@ class NicoNicoLoad:
             if match:
                 to_download.append(match)
             elif url:
-                urls.append(url.group(0))
+                urls.append(url)
 
         for match in to_download:
             if not os.path.isfile("./Music/"+ match.group(1) + ".mp3"):
@@ -109,19 +116,24 @@ class NicoNicoLoad:
                 with YoutubeDL(ydl_opts) as ydl:
                     try:
                         ydl.download([self.NICONICO_BASE_VIDEO_URL + match.group(4)])
-                        print(match.group(1) + " SUCCESS")
+                        print(match.group(1) + " " + TGREEN + "SUCCESS" + ENDC)
                     except Exception:
                         pass
             else:
-                print(match.group(1) + " SKIP")
-
-        try:
-            ydl.download(urls)
-        except Exception:
-            pass
+                print(match.group(1) + " " + TYELLOW + "SKIP" + ENDC)
 
         for song in to_download:
-            self.tagEditor(song)
+            try:
+                self.tagEditor(song)
+            except MutagenError:
+                print(TRED + song.group(1) + " not found!" + ENDC)
+
+        ydl_opts['outtmpl'] = "./Music/%(title)s.%(ext)s"
+        with YoutubeDL(ydl_opts) as ydl:
+            try:
+                ydl.download(urls)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
