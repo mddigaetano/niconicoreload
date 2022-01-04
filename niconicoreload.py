@@ -2,6 +2,7 @@
 
 import os
 import sys
+import re
 
 import tweepy
 from yt_dlp import YoutubeDL
@@ -18,7 +19,7 @@ class MyLogger(object):
         print("WARN: " + msg)
 
     def error(self, msg):
-        print("ERROR: " + msg)
+        print(msg)
 
 
 def my_hook(d):
@@ -37,10 +38,7 @@ ydl_opts = {
     'progress_hooks': [my_hook],
 }
 
-
 class NicoNicoLoad:
-
-    CHUNK_SIZE = 1024
     NICONICO_BASE_VIDEO_URL = "https://www.nicovideo.jp/watch/"
 
     corrections = {
@@ -56,19 +54,23 @@ class NicoNicoLoad:
     def __init__(self, twitter_user_id, songs_count, twitter_bearer_token):
         self.username = twitter_user_id
         self.songs_count = songs_count
+
+        self.regex = re.compile(r'^(\[(.+ feat\. .+)\] (.+)) #([a-z]{2}[0-9]+)')
+        self.re_http = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+
         self.api = tweepy.Client(bearer_token=twitter_bearer_token)
 
     def tagEditor(self, filename):
-        mp3 = MP3("./Music/" + filename + ".mp3")
+        mp3 = MP3("./Music/" + filename.group(0) + ".mp3")
         if mp3.tags == None:
             mp3.add_tags()
-        name = filename.split("] ")
-        artists = name[0]
-        title = name[1]
-        artists = artists[1:] \
+        artists = filename.group(2)
+        artists = artists \
             .replace(" feat.", ";") \
             .replace(" &", ";") \
             .replace("'", "*")
+
+        title = filename.group(3)
         try:
             title = self.corrections[title]
         except KeyError:
@@ -80,39 +82,46 @@ class NicoNicoLoad:
         mp3.save(v1=2)
 
     def tweetParser(self, tweet):
-        splitted = tweet.split(" #sm")
-        filename = splitted[0].split(" https")[0]
-        filename = filename.replace("&amp;", "&")
-        song_id = ""
-        try:
-            song_id = "sm" + splitted[1].split(' ')[0]
-        except:
-            print(tweet)
-        return filename, song_id
+        temp = self.re_http.match(tweet)
+        url = None
+        if temp:
+            url = temp.group(0)
+            tweet = tweet.replace(url + " ", "")
+        match = self.regex.match(tweet)
+        return match, url
 
     def start(self):
         tweets = tweepy.Paginator(
             self.api.get_users_tweets, self.username, max_results=10).flatten(limit=self.songs_count)
 
         to_download = []
+        urls = []
         for tweet in tweets:
-            filename, song_id = self.tweetParser(tweet.text)
-            if song_id != '':
-                to_download.append({"name": filename, "url": self.NICONICO_BASE_VIDEO_URL + song_id})
+            match, url = self.tweetParser(tweet.text)
+            if match:
+                to_download.append(match)
+            elif url:
+                urls.append(url.group(0))
 
-        for song in to_download:
-            if not os.path.isfile("./Music/"+song['name'] + ".mp3"):
-                ydl_opts['outtmpl'] = "./Music/" + song['name'] + ".%(ext)s"
+        for match in to_download:
+            if not os.path.isfile("./Music/"+ match.group(1) + ".mp3"):
+                ydl_opts['outtmpl'] = "./Music/" + match.group(1) + ".%(ext)s"
                 with YoutubeDL(ydl_opts) as ydl:
                     try:
-                        ydl.download([song['url']])
-                        print(song['name'] + " successfully downloaded")
+                        ydl.download([self.NICONICO_BASE_VIDEO_URL + match.group(4)])
+                        print(match.group(1) + " SUCCESS")
                     except Exception:
                         pass
             else:
-                print(song['name'] + " already downloaded")
+                print(match.group(1) + " SKIP")
+
+        try:
+            ydl.download(urls)
+        except Exception:
+            pass
+
         for song in to_download:
-            self.tagEditor(song['name'])
+            self.tagEditor(song)
 
 
 if __name__ == "__main__":
